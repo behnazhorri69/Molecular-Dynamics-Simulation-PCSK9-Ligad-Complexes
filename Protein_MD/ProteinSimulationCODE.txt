@@ -1,0 +1,129 @@
+فراخوانی گرومکس:
+source /usr/local/gromacs-2024.1/bin/GMXRC
+.......................................................................................................................................................................................
+‏ تولید توپولوژی در GROMACS
+gmx pdb2gmx -f protein_clean.pdb -o Protein.gro -ignh
+.......................................................................................................................................................................................
+ تعریف جعبه شبیه‌سازی
+gmx editconf -f Protein.gro -o protein_newbox.gro -c -d 1.5 -bt dodecahedron
+.......................................................................................................................................................................................
+افزودن مولکول‌های آب
+gmx solvate -cp protein_newbox.gro -cs spc216.gro -o protein_solv.gro -p topol.top
+.......................................................................................................................................................................................
+افزودن یون‌ها
+ابتدا فایل TPR برای اضافه کردن یون که فایل ورودی انرژی است:
+gmx grompp -f ions.mdp -c protein_solv.gro -p topol.top -o ions.tpr -maxwarn 2
+سپس:
+gmx genion -s ions.tpr -o protein_solv_ions.gro -p topol.top -pname NA -nname CL -neutral
+.......................................................................................................................................................................................
+مینیم‌سازی انرژی:
+gmx grompp -f min.mdp -c protein_solv_ions.gro -r protein_solv_ions.gro -p topol.top -o min.tpr -maxwarn 1
+gmx mdrun -deffnm min -nt 8 -pin on -v -cpt 10
+gmx mdrun -deffnm min -nt 8 -pin on -v -cpt 10 -cpi min.cpt -append
+بررسی انرژی مربوط به مراحل مختلف:
+gmx energy -f min.edr -o potential.xvg
+10
+xmgrace potential.xvg
+..............................................................................................................................................................................
+متعادل‌سازی (NVT و NPT):
+NVT ( تعداد ذرات ، حجم و دمای ثابت):
+gmx grompp -f nvt.mdp -c min.gro -r min.gro -p topol.top -o nvt.tpr
+gmx mdrun -deffnm nvt -nt 8 -pin on -v -cpt 10
+gmx mdrun -deffnm nvt -nt 8 -pin on -v -cpt 10 -cpi nvt.cpt -append
+
+g_energy -f nvt.edr -o temp.xvg 
+gmx energy -f nvt.edr -o temp.xvg
+xmgrace temp.xvg
+16,0
+
+gmx energy -f nvt.edr -o pot.xvg
+xmgrace pot.xvg
+12,0
+
+gmx energy -f nvt.edr -o tot.xvg
+xmgrace tot.xvg
+14,0
+
+gmx energy -f nvt.edr -o press.xvg
+xmgrace press.xvg
+17,0
+................................................................................................................................................................................
+NPT (تعداد ذرات، فشار و دمای ثابت):
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr
+gmx mdrun -deffnm npt -nt 8 -pin on -v -cpt 10 
+gmx mdrun -deffnm npt -nt 8 -pin on -v -cpt 10 -cpi npt.cpt -append
+ 
+gmx energy -f npt.edr -o temp_npt.xvg
+xmgrace temp_npt.xvg
+16,0
+
+gmx energy -f npt.edr -o pres_npt.xvg
+xmgrace pres_npt.xvg
+17,0
+
+gmx energy -f npt.edr -o dens_npt.xvg
+xmgrace dens_npt.xvg
+23,0
+.................................................................................................................................................................................
+ اجرای دینامیک مولکولی تولیدی (Production MD):
+gmx grompp -f md.mdp -c npt.gro -t npt.cpt -p topol.top  -o md.tpr
+gmx mdrun -deffnm md -nt 8 -pin on -v -cpt 10
+gmx mdrun -deffnm md -nt 8 -pin on -v -cpt 10 -cpi md.cpt -append
+..................................................................................................................................................................................
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ Post-MD processing and analysis
+gmx trjconv -f md.trr -o protein_clustered.trr -s md.tpr -pbc cluster
+gmx trjconv -f protein_clustered.trr -o protein_centered.trr -s md.tpr -center
+gmx trjconv -f protein_centered.trr -o protein.gro -s md.tpr -pbc atom
+
+# (a) Remove periodicity effects - cluster the system
+1) gmx trjconv -s md.tpr -f md.xtc -o complex_cluster.xtc -pbc cluster
+
+# (b) Center the complex in the box
+2) gmx trjconv -s md.tpr -f complex_cluster.xtc -o complex_centered.xtc -center
+
+# (c) Remove PBC (jumping atoms)
+3) gmx trjconv -s md.tpr -f complex_centered.xtc -o complex_t.gro -pbc atom
+
+RMSD
+gmx rms -s md.tpr -f complex_centered.trr -o rmsd.xvg -tu ns
+(4,4)
+#حذف پریدن های جعبه 
+4) gmx trjconv -s md.tpr -f complex_centered.trr -o complex_nojump.xtc -pbc nojump -center
+(1,0)
+
+RMSD
+gmx rms -s md.tpr -f complex_nojump.xtc -o rmsd1.xvg -tu ns
+(4,4)
+#بازسازی مولکول‌ها / اطمینان از یکپارچگی زنجیره‌ها
+5) gmx trjconv -s md.tpr -f complex_nojump.xtc -o complex_whole.xtc -pbc whole -ur compact -center
+
+RMSD
+gmx rms -s md.tpr -f complex_whole.xtc -o rmsd2.xvg -tu ns
+(4,4)
+
+vmd complex_t.gro
+
+gmx analyze -f rmsd2.xvg
+
+
+
+
+
+
+
+
+
+
+پس‌پردازش (Post-processing):
+حذف PBC، مرکزدهی، استخراج فایل نهایی
+
+
+
+...............................................................................................................................
+vmd Protein.gro
+
+
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.to

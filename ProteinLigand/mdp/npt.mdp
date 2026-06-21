@@ -1,0 +1,40 @@
+; npt.mdp - NPT equilibration
+title       = NPT equilibration
+define      = -DPOSRES -DPOSRES_LIG
+
+integrator  = md
+dt          = 0.002
+nsteps      = 2500000   ; 5 ns
+
+nstxout-compressed = 1000
+nstenergy   = 1000
+nstlog      = 1000
+
+cutoff-scheme = Verlet
+nstlist     = 10
+coulombtype = PME
+rcoulomb    = 1.0
+rvdw        = 1.0
+pme_order   = 4
+fourierspacing = 0.12
+
+constraints = h-bonds
+constraint_algorithm = lincs
+lincs_iter   = 1
+lincs_order  = 4
+
+tcoupl      = V-rescale
+tc-grps     = Protein Non-Protein
+tau_t       = 0.1 0.1
+ref_t       = 310 310
+
+pcoupl      = Berendsen
+pcoupltype  = isotropic
+tau_p       = 1.0
+ref_p       = 1.0
+compressibility = 4.5e-5
+
+refcoord_scaling = com
+
+pbc         = xyz
+gen_vel     = no

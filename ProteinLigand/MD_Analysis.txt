@@ -1,0 +1,209 @@
+# 11. Post-MD processing and analysis
+
+# (a) Remove periodicity effects - cluster the system
+1) gmx trjconv -s md.tpr -f md.xtc -o complex_cluster.xtc -pbc cluster
+(1,0)
+
+# (b) Center the complex in the box
+2) gmx trjconv -s md.tpr -f complex_cluster.xtc -o complex_centered.xtc -center
+(1,0)
+
+# (c) Making a fitted (aligned) trajector
+3) gmx trjconv -s md.tpr -f complex_centered.xtc -o complex_fit.xtc -fit rot+trans
+(1,0)
+
+#(d) Remove PBC (jumping atoms)
+4) gmx trjconv -s md.tpr -f complex_fit.xtc -o complex_t.gro -pbc atom
+ (0)
+
+vmd complex_t.gro
+.........................................................................................................................................................................................................
+# 12. Create index file for analysis
+gmx make_ndx -f Complex.gro -o index.ndx
+
+> 1 | 13
+> name 14 Complex
+> q
+...........................................................................................................................................................................................................
+# 13. RMSD
+RMSD (Protein)
+gmx rms -s md.tpr -f complex_fit.xtc -o rmsd_protein.xvg -tu ns
+(Backbone:4, Backbone:4)
+xmgrace rmsd_protein.xvg
+..............................................................................................................................................................................................................
+# 14.RMSF
+gmx rmsf -s md.tpr -f complex_fit.xtc -o rmsf.xvg -res
+(Backbone:4)
+xmgrace rmsf.xvg
+...............................................................................................................................................................................................................
+# 15.Rg
+gmx gyrate -s md.tpr -f complex_fit.xtc -o Rg_protein.xvg -tu ns
+(protein:1)
+gmx anaeig -f complex_fit.xtc -v eigenvec.trr -eig eigenval.xvg -s md.gro -b 0 -e 100000 -first 1 -last 2 -2d 2dproj.xvg -rmsf -tu ns
+..................................................................................................................................................................................................................
+# 16. H-Bond
+gmx hbond -s md.tpr -f complex_fit.xtc -num hbnum_prot_lig.xvg -dist hbdist_prot_lig.xvg -ang hbang_prot_lig.xvg -tu ns
+(protein:1, Ligand:13)
+xmgrace -nxy hbnum_prot_lig.xvg
+...................................................................................................................................................................................................................
+# 17. MMGBSA
+conda activate mmpbsa_mmgbsa_env
+
+gmx trjconv -s md.tpr -f complex_fit.xtc -o complex_Finish.xtc -n index.ndx -dt 20
+select complex(protein+ Ligand with LP): 14
+
+#Index Generate
+The main idea here is to generate a receptor group, a ligand group without the LPH particles and a complex group containing both the receptor and the ligand 
+without the LPH particles. In general, index files generated with GROMACS directly will contain more detailed information (i.e., receptor and ligand separated)
+
+gmx make_ndx -f md.tpr -o index_mod_gromacs.ndx
+>splitat 13
+>140|141      #شماره LP ها را باید پیدا کنیم
+>13&!142
+>name 143 lig
+>1|143
+>del 20-142
+>q
+
+ For noLP: echo 21 | gmx trjconv -s md.tpr -f complex_Finish.xtc  -dump 0 -o str_noLP.pdb -n index_mod_gromacs.ndx
+
+For noLP: echo 21 | gmx trjconv -s md.tpr -f complex_Finish.xtc -o com_traj.xtc -n index_mod_gromacs.ndx
+
+For noLP: mpirun -np 2 gmx_MMPBSA -O -i mmpbsa.in -cs str_noLP.pdb -ci index_mod_gromacs.ndx -cg 1 20 -ct com_traj.xtc -cp topol_noLP.top -o FINAL_RESULTS_MMPBSA.dat -eo FINAL_RESULTS_MMPBSA.csv
+......................................................................................................................................................................................................................................................................................................................................
+mpirun -np 4 gmx_MMPBSA -O -i mmpbsa.in -cs md.tpr -ct complex_Finish.xtc -ci index.ndx -cg 1 13 -cp topol.top -o FINAL_RESULTS_MMPBSA.dat -eo FINAL_RESULTS_MMPBSA.csv
+
+gmx_MMPBSA_ana
+...............................................................................................................................................................................................................................................................................................
+# 18. SASA
+    • gmx sasa -s md.tpr -f complex_fit.xtc -o sasa.xvg -odg solv.xvg -tu ns (1:protein) =(effect on absorption and metabolism of ligand / solvent accessible surface area)
+    • xmgrace -nxy sasa.xvg
+    • xmgrace -nxy solv.xvg
+...............................................................................................................................................................................................................................................................................................
+# 19. PCA
+    • gmx covar -f complex_fit.xtc -s md.tpr -b 0 -e 100000 -ascii (carbon_alpha:3, carbon_alpha:3) =output: covar.dat, covar.log, eigcomp.xvg, eigenval.xvg
+    • xmgrace -nxy eigenval.xvg =(decide about PC1, PC2 and PC3)   # یا رسم با پایتون که بهتر است
+    • gmx anaeig -f complex_fit.xtc -v eigenvec.trr -eig eigenval.xvg -s md.tpr -b 0 -e 100000 -first 1 -last 2 -proj -tu ns(carbon_alpha:3, carbon_alpha:3)
+    • xmgrace -nxy proj.xvg =(max variance, variation range should not be long because of instability) 
+    •  gmx anaeig -f complex_fit.xtc -v eigenvec.trr -eig eigenval.xvg -s md.gro -b 0 -e 100000 -first 1 -last 2 -2d 2dproj.xvg -rmsf -tu ns (carbon_alpha:3, carbon_alpha:3)
+    • xmgrace -nxy 2dproj.xvg =(number of conformers)
+...........................................................................................................................................................................................................................................................................
+# 20. RDF
+    • gmx rdf -s md.tpr -f complex_fit.xtc -n index.ndx \
+        -o rdf.xvg -bin 0.02 -cn number.xvg \
+        -seltype mol_com
+=(probability of distribution of a particle around protein or for example distance of ligand with complex center of mass)(Protein:1, Ligand:13, ctrl+D)
+
+   • xmgrace rdf.xvg
+...........................................................................................................................................................................................................................................................................
+# 21. Distance Monitoring
+پایش فاصله ligand ↔ residue خاص
+
+gmx distance -s md.tpr -f complex_fit.xtc \
+             -select 'com of group "Ligand43" plus com of residue name' \
+             -oall dist_res56.xvg
+...........................................................................................................................................................................................................................................................................
+اگر بعد از 100 نانوثانیه سیستم به تعادل نرسید این جوری ادامه میدیم که باید restart کنیم 
+ یعنی لازم نیست دوباره minimize کنیم یا equilibrium انجام دهیم
+قدم اصلی ادامه دادن تراجکتوری
+(Extend Simulation)
+1. checkpoint
+md.cpt داریم
+2.افزایش زمان شبیه سازی
+در فایل mdp
+افزایش nsteps
+3. ساخت tpr جدید
+gmx grompp -f md.mdp -c md.gro -t md.cpt -p topol.top -o md_extend.tpr
+کلید طلایی
+-t md.cpt
+4.ادامه دادنRUN
+gmx mdrun -deffnm md -cpi md.cpt
+گزینه مهم
+-cpi md.cpt (continue previous run)
+...........................................................................................................................................................................................................................................................................
+اگر بخوام شبیه سازی را ادامه بدم:
+مثلا 100 نانوثانیه بخوام اضافه شه: 
+gmx convert-tpr -s md.tpr -extend 100000 -o md_extend.tpr
+
+CPU 8:gmx mdrun -deffnm md -s md_extend.tpr -cpi md.cpt -nt 8 -pin on -v -cpt 10
+
+CPU 32:mpirun -np 8 gmx_mpi mdrun -deffnm md -s md_extend.tpr -cpi md.cpt -ntomp 4 -pin on -v -cpt 10 -dlb yes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+##analysis after continue
+
+# (a) Remove periodicity effects - cluster the system
+1) gmx trjconv -s md_extend.tpr -f md.xtc -o complex_cluster_extend.xtc -pbc cluster
+(1,0)
+
+# (b) Center the complex in the box
+2) gmx trjconv -s md_extend.tpr -f complex_cluster_extend.xtc -o complex_centered_extend.xtc -center
+(1,0)
+
+# (c) Making a fitted (aligned) trajector
+3) gmx trjconv -s md_extend.tpr -f complex_centered_extend.xtc -o complex_fit_extend.xtc -fit rot+trans
+(1,0)
+______________________________________________________________________________________________________
+# 1. RMSD
+RMSD (Protein)
+gmx rms -s md_extend.tpr -f complex_fit_extend.xtc -o rmsd_protein_200.xvg -tu ns
+(Backbone:4, Backbone:4)
+xmgrace rmsd_protein_200.xvg
+..............................................................................................................................................................................................................
+# 2.RMSF
+gmx rmsf -s md_extend.tpr -f complex_fit_extend.xtc -o rmsf_200.xvg -res
+(Backbone:4)
+xmgrace rmsf_200.xvg
+...............................................................................................................................................................................................................
+# 3.Rg
+gmx gyrate -s md_extend.tpr -f complex_fit_extend.xtc -o Rg_protein_200.xvg -tu ns
+(protein:1)
+xmgrace Rg_protein_200.xvg
+..................................................................................................................................................................................................................
+# 4. H-Bond
+gmx hbond -s md_extend.tpr -f complex_fit_extend.xtc -num hbnum_prot_lig_200.xvg -dist hbdist_prot_lig_200.xvg -ang hbang_prot_lig_200.xvg -tu ns
+(protein:1, Ligand:13)
+xmgrace -nxy hbnum_prot_lig_200.xvg
+..................................................................................................................................................................................................................
+# 5. SASA
+    • gmx sasa -s md_extend.tpr -f complex_fit_extend.xtc -o sasa_200.xvg -odg solv_200.xvg -tu ns (1:protein) =(effect on absorption and metabolism of ligand / solvent accessible surface area)
+    • xmgrace -nxy sasa_200.xvg
+    • xmgrace -nxy solv_200.xvg
+...................................................................................................................................................................................................................
+# 6. PCA
+    • gmx covar -f complex_fit_extend.xtc -s md_extend.tpr -b 0 -e 100000 -ascii (carbon_alpha:3, carbon_alpha:3) =output: covar.dat, covar.log, eigcomp.xvg, eigenval.xvg
+    • xmgrace -nxy eigenval.xvg =(decide about PC1, PC2 and PC3)   # یا رسم با پایتون که بهتر است
+    • gmx anaeig -f complex_fit_extend.xtc -v eigenvec_200.trr -eig eigenval_200.xvg -s md_extend.tpr -b 0 -e 100000 -first 1 -last 2 -proj -tu ns(carbon_alpha:3, carbon_alpha:3)
+    • xmgrace -nxy proj.xvg =(max variance, variation range should not be long because of instability) 
+    •  gmx anaeig -f complex_fit__extend.xtc -v eigenvec_200.trr -eig eigenval_200.xvg -s md_extend.gro -b 0 -e 100000 -first 1 -last 2 -2d 2dproj_200.xvg -rmsf -tu ns (carbon_alpha:3, carbon_alpha:3)
+    • xmgrace -nxy 2dproj_200.xvg =(number of conformers)
+...........................................................................................................................................................................................................................................................................
+# 7. Create index file for analysis
+gmx make_ndx -f Complex.gro -o index.ndx
+
+> 1 | 13
+> name 14 Complex
+> q
+...........................................................................................................................................................................................................................................................................
+# 8. RDF
+    • gmx rdf -s md_extend.tpr -f complex_fit_extend.xtc -n index.ndx \
+        -o rdf_200.xvg -bin 0.02 -cn number.xvg \
+        -seltype mol_com
+=(probability of distribution of a particle around protein or for example distance of ligand with complex center of mass)(Protein:1, Ligand:13, ctrl+D)
+
+   • xmgrace rdf_200.xvg
+...........................................................................................................................................................................................................................................................................
+# 9. MMGBSA
+conda activate mmpbsa_mmgbsa_env
+
+gmx trjconv -s md_extend.tpr -f complex_fit_extend.xtc -o complex_Finish_extend.xtc -n index.ndx -dt 20
+select complex(protein+ Ligand with LP): 14
+
+mpirun -np 4 gmx_MMPBSA -O -i mmpbsa.in -cs md_extend.tpr -ct complex_Finish_extend.xtc -ci index.ndx -cg 1 13 -cp topol.top -o FINAL_RESULTS_MMPBSA.dat -eo FINAL_RESULTS_MMPBSA.csv
+
+gmx_MMPBSA_ana 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+به تعادل نرسید و می خوام 100 نانوثانیه دیگه ادامه بدم
+gmx convert-tpr -s md_extend.tpr -extend 100000 -o md_extend_2.tpr
+
+gmx_mpi convert-tpr -s md_extend.tpr -extend 100000 -o md_extend_2.tpr
+mpirun -np 8 gmx_mpi mdrun -deffnm md -s md_extend_2.tpr -cpi md.cpt -ntomp 4 -pin on -v -cpt 10 -dlb yes

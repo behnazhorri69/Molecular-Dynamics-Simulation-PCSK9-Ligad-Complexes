@@ -1,0 +1,70 @@
+;
+;	File 'topol.top' was generated
+;	By user: jbgh (1000)
+;	On host: jbgh
+;	At date: Mon Oct  6 11:43:16 2025
+;
+;	This is a standalone topology file
+;
+;	Created by:
+;	                    :-) GROMACS - gmx pdb2gmx, 2024.1 (-:
+;	
+;	Executable:   /usr/local/gromacs/bin/gmx_mpi
+;	Data prefix:  /usr/local/gromacs
+;	Working dir:  /home/jbgh/Desktop/Behnaz/Ligand41/Simulation
+;	Command line:
+;	  gmx_mpi pdb2gmx -f Protein.pdb -o Protein.gro -ignh
+;	Force field was read from current directory or a relative path - path added.
+;
+
+; Include forcefield parameters
+#include "./charmm36-jul2022.ff/forcefield.itp"
+
+; additional params for the molecule
+#include "ligand41.prm"
+
+#include "ligand41.itp"
+
+; Include chain topologies
+#include "topol_Protein_chain_A.itp"
+#include "topol_Protein_chain_B.itp"
+
+; Include position restraint files
+#ifdef POSRES
+#include "posre_Protein_chain_A.itp"
+#endif
+
+; Include position restraint files
+#ifdef POSRES
+#include "posre_Protein_chain_B.itp"
+#endif
+
+; Include position restraint files
+#ifdef POSRES_LIG
+#include "posre_LIG.itp"
+#endif
+
+; Include water topology
+#include "./charmm36-jul2022.ff/tip3p.itp"
+
+#ifdef POSRES_WATER
+; Position restraint for each water oxygen
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+   1    1       1000       1000       1000
+#endif
+
+; Include topology for ions
+#include "./charmm36-jul2022.ff/ions.itp"
+
+[ system ]
+; Name
+Protein in water
+
+[ molecules ]
+; Compound        #mols
+Protein_chain_A     1
+Protein_chain_B     1
+Ligand41            1
+SOL         33847
+NA               2

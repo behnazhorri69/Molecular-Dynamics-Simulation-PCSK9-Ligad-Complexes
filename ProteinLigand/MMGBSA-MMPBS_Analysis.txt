@@ -1,0 +1,63 @@
+*محیط conda به‌صورت یکپارچه با gmx_MMPBSA + AmberTools روی Python 3.10 باشد.*
+conda create -n mmpbsa_mmgbsa_env python=3.10 -y
+
+conda activate mmpbsa_mmgbsa_env
+
+conda install -c conda-forge ambertools=22 -y
+which tleap
+which parmchk2
+which cpptraj
+which antechamber
+
+pip install gmx-MMPBSA
+
+gmx_MMPBSA -h
+
+echo $PATH
+gmx -h
+tleap -h
+parmchk2 -h
+cpptraj -h
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+gmx make_ndx -f Complex.gro -o index.ndx
+>1 | 13
+>name 14 Complex
+>q
+
+gmx trjconv -s md.tpr -f complex_fit.xtc -o complex_Finish.xtc -n index.ndx -dt 20
+select complex(protein+ Ligand with LP): 14
+
+#Index Generate
+The main idea here is to generate a receptor group, a ligand group without the LPH particles and a complex group containing both the receptor and the ligand 
+without the LPH particles. In general, index files generated with GROMACS directly will contain more detailed information (i.e., receptor and ligand separated)
+
+gmx make_ndx -f md.tpr -o index_mod_gromacs.ndx
+>splitat 13
+>140|141      #شماره LP ها را باید پیدا کنیم
+>13&!142
+>name 143 lig
+>1|143
+>del 20-142
+>q
+
+echo 21 | gmx trjconv -s md.tpr -f complex_Finish.xtc  -dump 0 -o str_noLP.pdb -n index_mod_gromacs.ndx
+
+echo 21 | gmx trjconv -s md.tpr -f complex_Finish.xtc -o com_traj.xtc -n index_mod_gromacs.ndx
+
+mpirun -np 2 gmx_MMPBSA -O -i mmpbsa.in -cs str_noLP.pdb -ci index_mod_gromacs.ndx -cg 1 20 -ct com_traj.xtc -cp topol_noLP.top -o FINAL_RESULTS_MMPBSA.dat -eo FINAL_RESULTS_MMPBSA.csv
+
+gmx_MMPBSA_ana
+
+
+
+
+
+
+
+
+
+
+
+
+

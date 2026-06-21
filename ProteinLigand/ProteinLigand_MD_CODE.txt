@@ -1,0 +1,83 @@
+#!/bin/bash
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Molecular Dynamics Simulation of Protein-Ligand Complex
+# Using GROMACS 2024.1
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Load GROMACS
+source /usr/local/gromacs-2024.1/bin/GMXRC
+..........................................................................................................................................................................................................................
+# 1. Generate topology for the protein
+gmx pdb2gmx -f Protein.pdb -o Protein.gro -ignh  
+..........................................................................................................................................................................................................................
+# 2. Convert ligand to .gro format 
+gmx editconf -f Ligand.pdb -o Ligand.gro
+gmx genrestr -f Ligand.gro -o posre_LIG.itp -fc 1000 1000 1000
+..........................................................................................................................................................................................................................
+# 3. Combine protein and ligand manually into Complex.gro
+..........................................................................................................................................................................................................................
+# 4. Define simulation box
+gmx editconf -f Complex.gro -o box.gro -c -d 1.5 -bt dodecahedron
+..........................................................................................................................................................................................................................
+# 5. Solvate the system
+gmx solvate -cp box.gro -cs spc216.gro -o box_solv.gro -p topol.top
+..........................................................................................................................................................................................................................
+# 6. Add ions to neutralize the system
+gmx grompp -f ions.mdp -c box_solv.gro -p topol.top -o ions.tpr -maxwarn 2
+gmx genion -s ions.tpr -o solv_ions.gro -p topol.top -pname NA -nname CL -neutral
+vmd solv_ions.gro
+..........................................................................................................................................................................................................................
+# 7. Energy minimization
+gmx grompp -f min.mdp -c solv_ions.gro -r solv_ions.gro -p topol.top -o min.tpr -maxwarn 1
+gmx mdrun -deffnm min -nt 8 -pin on -v -cpt 10
+gmx mdrun -deffnm min -nt 8 -pin on -v -cpt 10 -cpi min.cpt -appen
+..........................................................................................................................................................................................................................
+# 8. NVT equilibration
+gmx grompp -f nvt.mdp -c min.gro -r min.gro -p topol.top -o nvt.tpr
+gmx mdrun -deffnm nvt -nt 8 -pin on -v -cpt 10
+gmx mdrun -deffnm nvt -nt 8 -pin on -v -cpt 10 -cpi nvt.cpt -append
+
+gmx energy -f nvt.edr -o temp.xvg
+xmgrace temp.xvg
+16,0
+
+gmx energy -f nvt.edr -o pot.xvg
+xmgrace pot.xvg
+12,0
+
+gmx energy -f nvt.edr -o tot.xvg
+xmgrace tot.xvg
+14,0
+
+gmx energy -f nvt.edr -o press.xvg
+xmgrace press.xvg
+17,0
+.................................................................................................................................................................................................................................
+# 9. NPT equilibration
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr
+gmx mdrun -deffnm npt -nt 8 -pin on -v -cpt 10 
+gmx mdrun -deffnm npt -nt 8 -pin on -v -cpt 10 -cpi npt.cpt -append
+  
+gmx energy -f npt.edr -o temp_npt.xvg
+xmgrace temp_npt.xvg
+16,0
+
+gmx energy -f npt.edr -o pres_npt.xvg
+xmgrace pres_npt.xvg
+17,0
+
+gmx energy -f npt.edr -o dens_npt.xvg
+xmgrace dens_npt.xvg
+23,0
+..................................................................................................................................................................................................................................
+# 10. Production MD run
+gmx grompp -f md.mdp -c npt.gro -t npt.cpt -p topol.top  -o md.tpr
+gmx mdrun -deffnm md -nt 8 -pin on -v -cpt 10 
+gmx mdrun -deffnm md -nt 8 -pin on -v -cpt 10 -cpi npt.cpt -append
+اگر بخوام شبیه سازی را ادامه بدم:
+مثلا 100 نانوثانیه بخوام اضافه شه: 
+gmx convert-tpr -s md.tpr -extend 100000 -o md_extend.tpr
+gmx mdrun -deffnm md -s md_extend.tpr -cpi md.cpt
+gmx mdrun -deffnm md -s md_extend.tpr -cpi md.cpt -nt 8 -pin on -v -cpt 10
+
+mpirun -np 8 gmx_mpi mdrun -deffnm md -s md_extend.tpr -cpi md.cpt -ntomp 4 -pin on -v -cpt 10 -dlb yes
+
